@@ -1,0 +1,104 @@
+# crossdb is a function that reads through an inputted data set(eg. differentially expressed genes) and creates a new data.frame called requiredID.data that only contains entries with the right type of IDs for comparison(eg. Uniprot Accession).
+# It then runs variance tests and t tests on the sample and control columns to determine the p-value for each entry, and records it into a new pvalue column.
+# A new data.frame called significant.data will be created, which contains only the entries with a p-value <= 0.05.
+# The function then reads through a second data set and creates a new data.frame (common.genes) that only contains entries common to both data sets, as well as a new column with the corresponding ID from the second data set.
+# It then adds a new column that records whether the change between the two groups is positive or negative(up or down) based on the Log2 fold change and creates a new data.frame containing only the entries with a Log2 fold change absolute value greater than 0.5
+
+crossdb <- function(database1, database2, required.ID.column = 2, control.columns = 3:5, sample.columns = 6:8, log2.fold.change.column = 11){
+library(stringr)
+#Add pvalue column
+pvalue <- c(rep(0, length(database1[ ,1])))
+database1$pvalue <- pvalue
+database1$pvalue <- as.numeric(database1$pvalue)
+
+#Add db2ID column
+db2ID <- c(rep(0, length(database1[ ,1])))
+database1$db2ID <- db2ID
+
+#Number of genes profiled
+genes.profiled <- length(database1[ , 1])
+
+#Number of genes with requiredID
+requiredID.data <- database1[!database1[ ,required.ID.column] == "-", ]
+genes.with.requiredID <- length(requiredID.data[ ,required.ID.column])
+
+#Run Variance Test and t Test
+i <- 1
+{for(i in 1:length(requiredID.data$UniProt.Accession)){
+    a <- c(requiredID.data[i, control.columns[1]], requiredID.data[i, control.columns[2]], requiredID.data[i, control.columns[3]])
+    b <- c(requiredID.data[i, sample.columns[1]], requiredID.data[i, sample.columns[2]], requiredID.data[i, sample.columns[3]])
+    ftest <- var.test(a, b)
+    {if(as.numeric(ftest[3]) == "NaN")
+    {
+        ftest[3] <- 0
+    }}
+    {if(as.numeric(ftest[3]) > 0.05){
+        ttest <- t.test(a, b, var.equal = TRUE, paired = FALSE)
+        requiredID.data$pvalue[i] <- as.numeric(ttest[3])
+        i <- i+1
+    }
+    else{
+        if(ftest[3] == 0){
+            ttest[3] <- 1
+            requiredID.data$pvalue[i] <- as.numeric(ttest[3])
+            i <- i+1
+        }
+        else{
+        ttest <- t.test(a, b, var.equal = FALSE, paired = FALSE)
+        requiredID.data$pvalue[i] <- as.numeric(ttest[3])
+        i <- i+1
+    }}}
+}}
+
+#Number of genes with p-value <= 0.05
+significant.data <- requiredID.data[requiredID.data$pvalue <= 0.05, ]
+pvalue.genes <- length(significant.data$pvalue)
+
+#Genes in common with the database2 network
+i <- 1
+j <- 0
+{for(i in 1:length(database2[ ,1])){
+    exist <- str_detect(significant.data[ , required.ID.column], as.character(database2[i, 1]))
+    {if(is.element(TRUE, exist)){
+        z <- grep(as.character(database2[i, 1]), significant.data[ , required.ID.column])
+        significant.data$db2ID <- as.character(autophagy[i, 1])
+        j <- j+1
+        i<-i+1
+    }
+    else{
+        i<-i+1
+    }
+    }
+}
+}
+common.genes <- significant.data[!significant.data$db2ID == 0, ]
+
+#Number of Upregulated and Downregulated common genes
+i<-1
+up <- 0
+down <- 0
+sum.logup <- 0
+sum.logdown <- 0
+lin <- length(common.genes[ , log2.fold.change.column])
+Up.Down<-c(rep(0, lin))
+{for(i in 1:length(common.genes[, log2.fold.change.column]))
+    {truefalse <- common.genes[i, log2.fold.change.column] < 0
+    if(is.element(TRUE, truefalse))
+    {Up.Down[i]<-"Down"
+    down <- down + 1
+    sum.logdown <- sum.logdown + common.genes[i, log2.fold.change.column]
+    i<-i+1}
+    else{
+        Up.Down[i]<-"Up"
+        up <- up + 1
+        sum.logup <- sum.logup + common.genes[i, log2.fold.change.column]
+        i<-i+1}
+}
+}
+meanlogup <- sum.logup/up
+meanlogdown <- sum.logdown/down
+common.genes$Up.Down <- Up.Down
+
+#Log2 Fold change +/- 0.5 cut off
+logcutoff <- common.genes[!abs(common.genes[ , log2.fold.change.column]) < 0.5, ]
+}
